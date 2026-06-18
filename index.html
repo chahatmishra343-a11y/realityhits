@@ -2,19 +2,20 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CyberDraw // Air Neon Canvas</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hacker Didi // Multi-Matrix AR Engine</title>
     
-    <!-- MediaPipe Core Dependencies -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
     <style>
         :root {
             --neon-blue: #00f0ff;
-            --panel-bg: rgba(10, 10, 15, 0.85);
-            --border-green: #00ff55;
+            --neon-pink: #ff007f;
+            --panel-bg: rgba(5, 5, 10, 0.8);
         }
 
         * {
@@ -27,74 +28,108 @@
         body, html {
             width: 100%;
             height: 100%;
-            background-color: #030307;
+            background-color: #000;
             overflow: hidden;
-            color: #fff;
+            position: relative;
         }
 
-        /* The Main Drawing Canvas Layer */
-        #drawingCanvas {
+        /* Full Screen Selfie Mirror Video Background */
+        #webcam {
             position: absolute;
             top: 0;
             left: 0;
             width: 100vw;
             height: 100vh;
+            object-fit: cover;
+            transform: scaleX(-1); /* Perfect mirror alignment */
+            z-index: 1;
+            filter: brightness(0.5) contrast(1.2);
+        }
+
+        /* 2D Neon Canvas Layer */
+        #drawingCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             z-index: 5;
         }
 
-        /* Mirror Mode Camera Feed (Hidden in background corner or overlayed) */
-        #webcam {
+        /* 3D WebGL Particle Layer */
+        #webglCanvas {
             position: absolute;
-            bottom: 20px;
-            right: 20px;
-            width: 240px;
-            height: 180px;
-            border: 2px solid #333;
-            border-radius: 8px;
-            transform: scaleX(-1); /* Mirror view */
-            z-index: 2;
-            background: #000;
-            object-fit: cover;
-        }
-
-        /* Debug / Landmark Overlay Tracker directly on top of the webcam display */
-        #trackingOverlay {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            width: 240px;
-            height: 180px;
-            z-index: 3;
-            transform: scaleX(-1);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 4;
             pointer-events: none;
         }
 
-        /* Top Cyberpunk Control Panel Layout */
+        /* Diagnostic Skeletal Overlays Layer */
+        #trackingOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            z-index: 3;
+            transform: scaleX(-1);
+            pointer-events: none;
+            opacity: 0.3;
+        }
+
+        /* Upper Interactive Dashboard Control UI */
         .control-panel {
             position: absolute;
-            top: 20px;
+            top: 15px;
             left: 50%;
             transform: translateX(-50%);
             z-index: 10;
             background: var(--panel-bg);
-            border: 1px solid rgba(0, 240, 255, 0.3);
-            box-shadow: 0 0 15px rgba(0, 240, 255, 0.15);
-            padding: 15px 25px;
-            border-radius: 50px;
+            border: 1px solid rgba(0, 240, 255, 0.2);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+            padding: 10px 15px;
+            border-radius: 20px;
             display: flex;
+            flex-wrap: wrap; 
+            justify-content: center;
             align-items: center;
-            gap: 25px;
-            backdrop-filter: blur(10px);
+            gap: 15px;
+            width: 92%;
+            max-width: 650px;
+            backdrop-filter: blur(8px);
+        }
+
+        /* Mode Switch Buttons */
+        .mode-toggle {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #aaa;
+            padding: 5px 10px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+
+        .mode-toggle.active {
+            background: var(--neon-pink);
+            color: #fff;
+            border-color: var(--neon-pink);
+            box-shadow: 0 0 10px var(--neon-pink);
         }
 
         .panel-group {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 6px;
         }
 
         label {
-            font-size: 0.8rem;
+            font-size: 0.7rem;
             letter-spacing: 1px;
             color: var(--neon-blue);
             font-weight: bold;
@@ -103,281 +138,344 @@
         input[type="color"] {
             background: transparent;
             border: none;
-            width: 35px;
-            height: 35px;
+            width: 25px;
+            height: 25px;
             cursor: pointer;
-            border-radius: 50%;
         }
 
         input[type="range"] {
             -webkit-appearance: none;
-            background: #222;
-            height: 6px;
-            border-radius: 3px;
+            background: rgba(255,255,255,0.2);
+            height: 4px;
+            border-radius: 2px;
             outline: none;
-            width: 120px;
+            width: 60px;
         }
 
         input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 16px;
-            height: 16px;
+            width: 12px;
+            height: 12px;
             border-radius: 50%;
             background: var(--neon-blue);
-            cursor: pointer;
-            box-shadow: 0 0 8px var(--neon-blue);
         }
 
-        /* Live HUD State Badge */
         .hud-status {
-            font-size: 0.9rem;
+            font-size: 0.7rem;
             font-weight: bold;
-            padding: 5px 15px;
-            border-radius: 20px;
-            background: rgba(0,0,0,0.5);
-            min-width: 110px;
+            padding: 4px 10px;
+            border-radius: 15px;
+            background: rgba(0,0,0,0.6);
+            min-width: 100px;
             text-align: center;
             border: 1px solid #333;
         }
 
-        .state-draw { color: #00ff55; border-color: #00ff55; }
-        .state-erase { color: #ff0055; border-color: #ff0055; }
-        .state-pause { color: #ffcc00; border-color: #ffcc00; }
+        .state-draw, .state-swarm { color: #00ff55; border-color: #00ff55; }
+        .state-erase, .state-expand { color: #ff0055; border-color: #ff0055; }
+        .state-pause, .state-blast { color: #ffcc00; border-color: #ffcc00; }
+        .state-loading { color: #aaa; border-color: #333; }
 
-        /* Quick Clear Button */
         .clear-btn {
             background: transparent;
             border: 1px solid #ff0055;
             color: #ff0055;
-            padding: 6px 14px;
+            padding: 4px 10px;
             cursor: pointer;
-            font-size: 0.75rem;
-            border-radius: 20px;
-            transition: all 0.2s ease;
+            font-size: 0.7rem;
+            border-radius: 15px;
         }
-        .clear-btn:hover {
-            background: #ff0055;
-            color: #000;
-            box-shadow: 0 0 10px #ff0055;
+
+        @media (min-width: 600px) {
+            input[type="range"] { width: 90px; }
+            .control-panel { padding: 12px 25px; border-radius: 50px; gap: 20px; width: auto; }
+            label { font-size: 0.8rem; }
+            .hud-status, .clear-btn, .mode-toggle { font-size: 0.8rem; padding: 6px 14px; }
         }
     </style>
 </head>
 <body>
 
-    <!-- Upper Interactive Custom Control Dashboard Layout -->
     <div class="control-panel">
-        <div class="panel-group">
-            <label>COLOR</label>
-            <input type="color" id="brushColor" value="#00f0ff">
-        </div>
+        <button class="mode-toggle active" id="btnDraw" onclick="switchEngine('DRAW')">[ NEON DRAW ]</button>
+        <button class="mode-toggle" id="btnSwarm" onclick="switchEngine('SWARM')">[ QUANTUM SWARM ]</button>
         
-        <div class="panel-group">
-            <label>SIZE</label>
-            <input type="range" id="brushSize" min="3" max="30" value="10">
+        <div id="drawControls" style="display: flex; align-items: center; gap: 15px;">
+            <div class="panel-group">
+                <label>CLR</label>
+                <input type="color" id="brushColor" value="#00f0ff">
+            </div>
+            <div class="panel-group">
+                <label>SIZE</label>
+                <input type="range" id="brushSize" min="4" max="35" value="12">
+            </div>
+            <button class="clear-btn" onclick="clearDrawCanvas()">CLEAR</button>
         </div>
 
-        <button class="clear-btn" onclick="clearCanvas()">CLEAR REPO</button>
-
-        <div class="hud-status state-pause" id="hudState">LOADING_AI...</div>
+        <div class="hud-status state-loading" id="hudState">LOADING_AI...</div>
     </div>
 
-    <!-- Background Art Canvas -->
-    <canvas id="drawingCanvas"></canvas>
-
-    <!-- Lower Right Vision Subsystems -->
     <video id="webcam" autoplay playsinline></video>
     <canvas id="trackingOverlay"></canvas>
 
+    <canvas id="webglCanvas"></canvas>
+    <canvas id="drawingCanvas"></canvas>
+
     <script>
-        const canvas = document.getElementById('drawingCanvas');
-        const ctx = canvas.getContext('2d');
+        let currentEngine = "DRAW"; // DRAW or SWARM
+        let lastX = null, lastY = null;
+        let handPresent = false;
+        let targetX = 0, targetY = 0, targetZ = 0;
+        let quantumMode = "SWARM";
+        let targetRadius = 0.4;
+
         const video = document.getElementById('webcam');
         const overlayCanvas = document.getElementById('trackingOverlay');
         const oCtx = overlayCanvas.getContext('2d');
         const hudState = document.getElementById('hudState');
 
-        // Config Controls
+        // 2D Elements
+        const dCanvas = document.getElementById('drawingCanvas');
+        const dCtx = dCanvas.getContext('2d');
         const colorPicker = document.getElementById('brushColor');
         const sizeSlider = document.getElementById('brushSize');
+        const drawControls = document.getElementById('drawControls');
 
-        let lastX = null;
-        let lastY = null;
-        let currentMode = "PAUSE"; // DRAW, ERASE, PAUSE
+        // Buttons
+        const btnDraw = document.getElementById('btnDraw');
+        const btnSwarm = document.getElementById('btnSwarm');
 
-        // Size Setup
-        function initCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            // Set dark canvas ground baseline
-            ctx.fillStyle = '#030307';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-        }
-        initCanvas();
-        window.addEventListener('resize', initCanvas);
-
-        function clearCanvas() {
-            ctx.fillStyle = '#030307';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // --- SCREEN LAYOUT ARCHITECTURE INITIALIZATION ---
+        function resizeElements() {
+            dCanvas.width = window.innerWidth;
+            dCanvas.height = window.innerHeight;
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            dCtx.clearRect(0, 0, dCanvas.width, dCanvas.height);
         }
 
-        // --- MEDIAPIPE GESTURE TELEMETRY ENGINE ---
-        function analyzeGesture(landmarks) {
-            // Helper tool to measure Euclidean absolute distance between two tracking knuckles
-            function getDistance(pt1, pt2) {
-                return Math.hypot(pt1.x - pt2.x, pt1.y - pt2.y);
+        function clearDrawCanvas() {
+            dCtx.clearRect(0, 0, dCanvas.width, dCanvas.height);
+        }
+
+        function switchEngine(engine) {
+            currentEngine = engine;
+            if (engine === 'DRAW') {
+                btnDraw.className = "mode-toggle active";
+                btnSwarm.className = "mode-toggle";
+                drawControls.style.display = "flex";
+                document.getElementById('webglCanvas').style.display = "none";
+                dCanvas.style.display = "block";
+            } else {
+                btnDraw.className = "mode-toggle";
+                btnSwarm.className = "mode-toggle active";
+                drawControls.style.display = "none";
+                document.getElementById('webglCanvas').style.display = "block";
+                dCanvas.style.display = "none";
             }
+            lastX = null; lastY = null;
+        }
 
-            // Key Landmark Identification IDs assigned by MediaPipe
-            const wrist = landmarks[0];
-            const thumbTip = landmarks[4];
+        // --- THREE.JS 3D PARTICLE SETUP ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.z = 5;
+
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('webglCanvas'), alpha: true, antialias: true });
+        
+        const particleCount = 4500; // Smoother performance metrics on mobile viewports
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const velocities = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
+
+        function generateTexture() {
+            const c = document.createElement('canvas'); c.width = 32; c.height = 32;
+            const ctx = c.getContext('2d');
+            const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+            grad.addColorStop(0, 'rgba(255,255,255,1)');
+            grad.addColorStop(0.2, 'rgba(0,240,255,0.8)');
+            grad.addColorStop(0.6, 'rgba(255,0,127,0.2)');
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = grad; ctx.fillRect(0, 0, 32, 32);
+            return new THREE.CanvasTexture(c);
+        }
+
+        for(let i=0; i<particleCount*3; i+=3) {
+            positions[i] = (Math.random() - 0.5) * 10;
+            positions[i+1] = (Math.random() - 0.5) * 10;
+            positions[i+2] = (Math.random() - 0.5) * 5;
+            const mix = Math.random();
+            colors[i] = mix > 0.5 ? 0.0 : 1.0;
+            colors[i+1] = mix > 0.5 ? 0.95 : 0.0;
+            colors[i+2] = mix > 0.5 ? 1.0 : 0.5;
+        }
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const material = new THREE.PointsMaterial({
+            size: 0.16, map: generateTexture(), vertexColors: true,
+            transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+        });
+        const system = new THREE.Points(geometry, material);
+        scene.add(system);
+
+        // --- AIR DRAWING ALGORITHMS ---
+        function executeDraw(landmarks, gesture) {
             const indexTip = landmarks[8];
-            const indexPip = landmarks[6];
-            const middleTip = landmarks[12];
-            const ringTip = landmarks[16];
-            const pinkyTip = landmarks[20];
+            const targetX = (1 - indexTip.x) * dCanvas.width;
+            const targetY = indexTip.y * dCanvas.height;
 
-            // 1. Evaluate if fingers are extended upwards away from wrist
-            const isIndexExtended = indexTip.y < indexPip.y;
-            const isMiddleExtended = middleTip.y < landmarks[10].y;
-            const isRingExtended = ringTip.y < landmarks[14].y;
-            const isPinkyExtended = pinkyTip.y < landmarks[18].y;
+            hudState.innerText = gesture + "_MODE";
+            hudState.className = `hud-status state-${gesture.toLowerCase()}`;
 
-            // Gesture A: Closed Fist -> All fingers curled down closely towards wrist base
-            if (!isIndexExtended && !isMiddleExtended && !isRingExtended && !isPinkyExtended) {
-                return "PAUSE";
-            }
-
-            // Gesture B: Open Palm -> Every single finger extended up open
-            if (isIndexExtended && isMiddleExtended && isRingExtended && isPinkyExtended) {
-                return "ERASE";
-            }
-
-            // Gesture C: Only Index Finger extended -> Drawing Mode Engaged!
-            if (isIndexExtended && !isMiddleExtended && !isRingExtended) {
-                return "DRAW";
-            }
-
-            return "PAUSE"; // Default safe state
-        }
-
-        // --- DRAWING PIPELINE EXECUTION ---
-        function processDrawing(landmarks, mode) {
-            // Target the absolute position of index finger tip (Landmark 8)
-            const indexTip = landmarks[8];
-            
-            // Mirror coordinate matching (since camera is flipped horizontal, flip tracking X)
-            const targetX = (1 - indexTip.x) * canvas.width;
-            const targetY = indexTip.y * canvas.height;
-
-            // Manage HUD UI Class states
-            hudState.innerText = mode + "_MODE";
-            hudState.className = `hud-status state-${mode.toLowerCase()}`;
-
-            if (mode === "DRAW") {
+            if (gesture === "DRAW") {
                 if (lastX !== null && lastY !== null) {
-                    ctx.beginPath();
-                    ctx.moveTo(lastX, lastY);
-                    ctx.lineTo(targetX, targetY);
+                    dCtx.beginPath(); dCtx.moveTo(lastX, lastY); dCtx.lineTo(targetX, targetY);
+                    dCtx.strokeStyle = colorPicker.value; dCtx.lineWidth = sizeSlider.value;
+                    dCtx.lineCap = 'round'; dCtx.lineJoin = 'round';
+                    dCtx.shadowColor = colorPicker.value; dCtx.shadowBlur = parseInt(sizeSlider.value) * 1.4;
+                    dCtx.stroke();
                     
-                    // --- NEON GLOW ENGINE FILTERS ---
-                    ctx.strokeStyle = colorPicker.value;
-                    ctx.lineWidth = sizeSlider.value;
-                    ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
-                    
-                    // Shadow layer config creating the neon discharge bloom aura
-                    ctx.shadowColor = colorPicker.value;
-                    ctx.shadowBlur = parseInt(sizeSlider.value) * 1.5;
-                    
-                    ctx.stroke();
-                    
-                    // Core overlay layer reinforcement (Makes the inside of trail bright/white-hot)
-                    ctx.beginPath();
-                    ctx.moveTo(lastX, lastY);
-                    ctx.lineTo(targetX, targetY);
-                    ctx.strokeStyle = "#ffffff";
-                    ctx.lineWidth = parseInt(sizeSlider.value) * 0.3; // Thinner core line
-                    ctx.shadowBlur = 0; // Turn off glow for center thread
-                    ctx.stroke();
+                    dCtx.beginPath(); dCtx.moveTo(lastX, lastY); dCtx.lineTo(targetX, targetY);
+                    dCtx.strokeStyle = "#ffffff"; dCtx.lineWidth = parseInt(sizeSlider.value) * 0.25;
+                    dCtx.shadowBlur = 0; dCtx.stroke();
                 }
-                lastX = targetX;
-                lastY = targetY;
-            } 
-            else if (mode === "ERASE") {
-                // Erase cuts circles out with the background baseline color
-                ctx.beginPath();
-                ctx.arc(targetX, targetY, parseInt(sizeSlider.value) * 3, 0, Math.PI * 2);
-                ctx.fillStyle = '#030307';
-                ctx.shadowBlur = 0;
-                ctx.fill();
-                
-                // Keep trail references snapped to prevent giant gap lines crossing screen on next draw
-                lastX = null;
-                lastY = null;
-            } 
-            else {
-                // Paused / Resting state
-                lastX = null;
-                lastY = null;
+                lastX = targetX; lastY = targetY;
+            } else if (gesture === "ERASE") {
+                dCtx.save(); dCtx.globalCompositeOperation = 'destination-out';
+                dCtx.beginPath(); dCtx.arc(targetX, targetY, parseInt(sizeSlider.value) * 2.5, 0, Math.PI * 2);
+                dCtx.fill(); dCtx.restore();
+                lastX = null; lastY = null;
+            } else {
+                lastX = null; lastY = null;
             }
         }
 
-        // --- MEDIAPIPE CORE LIFECYCLE EVENT HANDLERS ---
-        function onResults(results) {
-            // Synchronize dimensions of internal diagnostic overlay tracker
-            if(overlayCanvas.width !== video.videoWidth) {
-                overlayCanvas.width = video.videoWidth;
-                overlayCanvas.height = video.videoHeight;
-            }
+        // --- GESTURE DECISION ENGINE ---
+        function processTracking(landmarks) {
+            const indexTip = landmarks[8], indexPip = landmarks[6];
+            const middleTip = landmarks[12], ringTip = landmarks[16], pinkyTip = landmarks[20], thumbTip = landmarks[4];
 
+            const isIndex = indexTip.y < indexPip.y;
+            const isMiddle = middleTip.y < landmarks[10].y;
+            const isRing = ringTip.y < landmarks[14].y;
+            const isPinky = pinkyTip.y < landmarks[18].y;
+
+            if (currentEngine === "DRAW") {
+                if (isIndex && !isMiddle && !isRing) return "DRAW";
+                if (isIndex && isMiddle && isRing && isPinky) return "ERASE";
+                return "PAUSE";
+            } else {
+                const gap = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+                if (gap < 0.07 && isRing && isPinky) {
+                    targetRadius = THREE.MathUtils.mapLinear(gap, 0.02, 0.07, 0.2, 2.2);
+                    return "EXPAND";
+                }
+                if (isIndex && !isMiddle && !isRing) return "BLAST";
+                return "SWARM";
+            }
+        }
+
+        function onResults(results) {
+            if(overlayCanvas.width !== video.videoWidth) {
+                overlayCanvas.width = video.videoWidth; overlayCanvas.height = video.videoHeight;
+            }
             oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const primaryHand = results.multiHandLandmarks[0];
+                handPresent = true;
+                const hand = results.multiHandLandmarks[0];
                 
-                // Draw skeleton landmarks inside our mini preview tracking window
-                drawConnectors(oCtx, primaryHand, HAND_CONNECTIONS, {color: '#00f0ff', lineWidth: 2});
-                drawLandmarks(oCtx, primaryHand, {color: '#ff0055', lineWidth: 1, radius: 3});
+                drawConnectors(oCtx, hand, HAND_CONNECTIONS, {color: '#00f0ff', lineWidth: 2});
+                drawLandmarks(oCtx, hand, {color: '#ff007f', radius: 3});
 
-                // Calculate current configuration gesture shape
-                const gestureMode = analyzeGesture(primaryHand);
-                
-                // Stream coordinate calculation into artwork engine
-                processDrawing(primaryHand, gestureMode);
+                const gesture = processTracking(hand);
+
+                if (currentEngine === "DRAW") {
+                    executeDraw(hand, gesture);
+                } else {
+                    quantumMode = gesture;
+                    const node = (gesture === "BLAST") ? hand[8] : hand[9];
+                    targetX = (1 - node.x - 0.5) * 7.5 * (window.innerWidth / window.innerHeight);
+                    targetY = (0.5 - node.y) * 7.5;
+                    targetZ = -node.z * 4;
+
+                    hudState.innerText = quantumMode + "_ENGAGED";
+                    hudState.className = `hud-status state-${quantumMode.toLowerCase()}`;
+                }
             } else {
-                // If no hands present on screen, enter standby loop state
-                hudState.innerText = "AWAITING_HAND";
-                hudState.className = "hud-status state-pause";
-                lastX = null;
-                lastY = null;
+                handPresent = false;
+                lastX = null; lastY = null;
+                hudState.innerText = "AWAITING_PALM";
+                hudState.className = "hud-status state-loading";
             }
         }
 
-        // Initializing Hands Framework Parameters
-        const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-        });
+        // --- WEBGL SIMULATION MATH TIMELINE ---
+        const clock = new THREE.Clock();
+        function animateParticles() {
+            requestAnimationFrame(animateParticles);
+            const dt = clock.getDelta();
+            const posAttr = geometry.attributes.position;
+            const time = clock.getElapsedTime();
 
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.7,
-            minTrackingConfidence: 0.7
-        });
+            for (let i = 0; i < particleCount; i++) {
+                const i3 = i * 3;
+                let px = posAttr.array[i3], py = posAttr.array[i3+1], pz = posAttr.array[i3+2];
 
+                if (handPresent && currentEngine === "SWARM") {
+                    if (quantumMode === "SWARM" || quantumMode === "EXPAND") {
+                        const u = (i * 0.17) % (Math.PI * 2); const v = (i * 0.63) % Math.PI;
+                        const r = targetRadius + Math.sin(time * 3 + i) * 0.05;
+                        const sx = targetX + r * Math.sin(v) * Math.cos(u);
+                        const sy = targetY + r * Math.sin(v) * Math.sin(u);
+                        const sz = targetZ + r * Math.cos(v);
+
+                        velocities[i3] += (sx - px) * 5.0 * dt;
+                        velocities[i3+1] += (sy - py) * 5.0 * dt;
+                        velocities[i3+2] += (sz - pz) * 5.0 * dt;
+                        velocities[i3] *= 0.85; velocities[i3+1] *= 0.85; velocities[i3+2] *= 0.85;
+                    } else if (quantumMode === "BLAST") {
+                        velocities[i3] += ((targetX - px) * 7.0 - velocities[i3+1] * 0.3) * dt;
+                        velocities[i3+1] += ((targetY - py) * 7.0 + velocities[i3] * 0.3) * dt;
+                        velocities[i3+2] += ((targetZ - pz) * 7.0) * dt;
+                        velocities[i3] *= 0.9; velocities[i3+1] *= 0.9; velocities[i3+2] *= 0.9;
+                    }
+                } else {
+                    // Nebulous Space Drift
+                    velocities[i3] += Math.sin(time + i) * 0.08 * dt;
+                    velocities[i3+1] += Math.cos(time * 0.7 + i) * 0.08 * dt;
+                    velocities[i3] *= 0.94; velocities[i3+1] *= 0.94; velocities[i3+2] *= 0.94;
+                }
+
+                posAttr.array[i3] += velocities[i3];
+                posAttr.array[i3+1] += velocities[i3+1];
+                posAttr.array[i3+2] += velocities[i3+2];
+            }
+            posAttr.needsUpdate = true;
+            renderer.render(scene, camera);
+        }
+
+        // --- ENGINE SYSTEMS INITIALIZATION ---
+        const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.55, minTrackingConfidence: 0.55 });
         hands.onResults(onResults);
 
-        // Hardware Camera Initialization
-        const camera = new Camera(video, {
-            onFrame: async () => {
-                await hands.send({image: video});
-            },
-            width: 640,
-            height: 480
+        const cameraPipe = new Camera(video, {
+            onFrame: async () => { await hands.send({image: video}); },
+            facingMode: 'user',
+            width: window.innerWidth > 600 ? 640 : 320, height: window.innerWidth > 600 ? 480 : 240
         });
-        
-        camera.start().then(() => {
-            hudState.innerText = "SYSTEM_READY";
+
+        // Start Systems
+        resizeElements();
+        window.addEventListener('resize', resizeElements);
+        switchEngine('DRAW'); // Start in neon draw mode by default
+
+        cameraPipe.start().then(() => {
+            animateParticles();
         });
     </script>
 </body>
