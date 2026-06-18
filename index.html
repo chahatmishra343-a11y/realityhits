@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberDraw // Air Neon Canvas</title>
+    
+    <!-- MediaPipe Core Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --neon-blue: #00f0ff;
+            --panel-bg: rgba(10, 10, 15, 0.85);
+            --border-green: #00ff55;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            background-color: #030307;
+            overflow: hidden;
+            color: #fff;
+        }
+
+        /* The Main Drawing Canvas Layer */
+        #drawingCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 5;
+        }
+
+        /* Mirror Mode Camera Feed (Hidden in background corner or overlayed) */
+        #webcam {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 240px;
+            height: 180px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            transform: scaleX(-1); /* Mirror view */
+            z-index: 2;
+            background: #000;
+            object-fit: cover;
+        }
+
+        /* Debug / Landmark Overlay Tracker directly on top of the webcam display */
+        #trackingOverlay {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 240px;
+            height: 180px;
+            z-index: 3;
+            transform: scaleX(-1);
+            pointer-events: none;
+        }
+
+        /* Top Cyberpunk Control Panel Layout */
+        .control-panel {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            background: var(--panel-bg);
+            border: 1px solid rgba(0, 240, 255, 0.3);
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.15);
+            padding: 15px 25px;
+            border-radius: 50px;
+            display: flex;
+            align-items: center;
+            gap: 25px;
+            backdrop-filter: blur(10px);
+        }
+
+        .panel-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        label {
+            font-size: 0.8rem;
+            letter-spacing: 1px;
+            color: var(--neon-blue);
+            font-weight: bold;
+        }
+
+        input[type="color"] {
+            background: transparent;
+            border: none;
+            width: 35px;
+            height: 35px;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            background: #222;
+            height: 6px;
+            border-radius: 3px;
+            outline: none;
+            width: 120px;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--neon-blue);
+            cursor: pointer;
+            box-shadow: 0 0 8px var(--neon-blue);
+        }
+
+        /* Live HUD State Badge */
+        .hud-status {
+            font-size: 0.9rem;
+            font-weight: bold;
+            padding: 5px 15px;
+            border-radius: 20px;
+            background: rgba(0,0,0,0.5);
+            min-width: 110px;
+            text-align: center;
+            border: 1px solid #333;
+        }
+
+        .state-draw { color: #00ff55; border-color: #00ff55; }
+        .state-erase { color: #ff0055; border-color: #ff0055; }
+        .state-pause { color: #ffcc00; border-color: #ffcc00; }
+
+        /* Quick Clear Button */
+        .clear-btn {
+            background: transparent;
+            border: 1px solid #ff0055;
+            color: #ff0055;
+            padding: 6px 14px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            border-radius: 20px;
+            transition: all 0.2s ease;
+        }
+        .clear-btn:hover {
+            background: #ff0055;
+            color: #000;
+            box-shadow: 0 0 10px #ff0055;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Upper Interactive Custom Control Dashboard Layout -->
+    <div class="control-panel">
+        <div class="panel-group">
+            <label>COLOR</label>
+            <input type="color" id="brushColor" value="#00f0ff">
+        </div>
+        
+        <div class="panel-group">
+            <label>SIZE</label>
+            <input type="range" id="brushSize" min="3" max="30" value="10">
+        </div>
+
+        <button class="clear-btn" onclick="clearCanvas()">CLEAR REPO</button>
+
+        <div class="hud-status state-pause" id="hudState">LOADING_AI...</div>
+    </div>
+
+    <!-- Background Art Canvas -->
+    <canvas id="drawingCanvas"></canvas>
+
+    <!-- Lower Right Vision Subsystems -->
+    <video id="webcam" autoplay playsinline></video>
+    <canvas id="trackingOverlay"></canvas>
+
+    <script>
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        const video = document.getElementById('webcam');
+        const overlayCanvas = document.getElementById('trackingOverlay');
+        const oCtx = overlayCanvas.getContext('2d');
+        const hudState = document.getElementById('hudState');
+
+        // Config Controls
+        const colorPicker = document.getElementById('brushColor');
+        const sizeSlider = document.getElementById('brushSize');
+
+        let lastX = null;
+        let lastY = null;
+        let currentMode = "PAUSE"; // DRAW, ERASE, PAUSE
+
+        // Size Setup
+        function initCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            // Set dark canvas ground baseline
+            ctx.fillStyle = '#030307';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        initCanvas();
+        window.addEventListener('resize', initCanvas);
+
+        function clearCanvas() {
+            ctx.fillStyle = '#030307';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // --- MEDIAPIPE GESTURE TELEMETRY ENGINE ---
+        function analyzeGesture(landmarks) {
+            // Helper tool to measure Euclidean absolute distance between two tracking knuckles
+            function getDistance(pt1, pt2) {
+                return Math.hypot(pt1.x - pt2.x, pt1.y - pt2.y);
+            }
+
+            // Key Landmark Identification IDs assigned by MediaPipe
+            const wrist = landmarks[0];
+            const thumbTip = landmarks[4];
+            const indexTip = landmarks[8];
+            const indexPip = landmarks[6];
+            const middleTip = landmarks[12];
+            const ringTip = landmarks[16];
+            const pinkyTip = landmarks[20];
+
+            // 1. Evaluate if fingers are extended upwards away from wrist
+            const isIndexExtended = indexTip.y < indexPip.y;
+            const isMiddleExtended = middleTip.y < landmarks[10].y;
+            const isRingExtended = ringTip.y < landmarks[14].y;
+            const isPinkyExtended = pinkyTip.y < landmarks[18].y;
+
+            // Gesture A: Closed Fist -> All fingers curled down closely towards wrist base
+            if (!isIndexExtended && !isMiddleExtended && !isRingExtended && !isPinkyExtended) {
+                return "PAUSE";
+            }
+
+            // Gesture B: Open Palm -> Every single finger extended up open
+            if (isIndexExtended && isMiddleExtended && isRingExtended && isPinkyExtended) {
+                return "ERASE";
+            }
+
+            // Gesture C: Only Index Finger extended -> Drawing Mode Engaged!
+            if (isIndexExtended && !isMiddleExtended && !isRingExtended) {
+                return "DRAW";
+            }
+
+            return "PAUSE"; // Default safe state
+        }
+
+        // --- DRAWING PIPELINE EXECUTION ---
+        function processDrawing(landmarks, mode) {
+            // Target the absolute position of index finger tip (Landmark 8)
+            const indexTip = landmarks[8];
+            
+            // Mirror coordinate matching (since camera is flipped horizontal, flip tracking X)
+            const targetX = (1 - indexTip.x) * canvas.width;
+            const targetY = indexTip.y * canvas.height;
+
+            // Manage HUD UI Class states
+            hudState.innerText = mode + "_MODE";
+            hudState.className = `hud-status state-${mode.toLowerCase()}`;
+
+            if (mode === "DRAW") {
+                if (lastX !== null && lastY !== null) {
+                    ctx.beginPath();
+                    ctx.moveTo(lastX, lastY);
+                    ctx.lineTo(targetX, targetY);
+                    
+                    // --- NEON GLOW ENGINE FILTERS ---
+                    ctx.strokeStyle = colorPicker.value;
+                    ctx.lineWidth = sizeSlider.value;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    
+                    // Shadow layer config creating the neon discharge bloom aura
+                    ctx.shadowColor = colorPicker.value;
+                    ctx.shadowBlur = parseInt(sizeSlider.value) * 1.5;
+                    
+                    ctx.stroke();
+                    
+                    // Core overlay layer reinforcement (Makes the inside of trail bright/white-hot)
+                    ctx.beginPath();
+                    ctx.moveTo(lastX, lastY);
+                    ctx.lineTo(targetX, targetY);
+                    ctx.strokeStyle = "#ffffff";
+                    ctx.lineWidth = parseInt(sizeSlider.value) * 0.3; // Thinner core line
+                    ctx.shadowBlur = 0; // Turn off glow for center thread
+                    ctx.stroke();
+                }
+                lastX = targetX;
+                lastY = targetY;
+            } 
+            else if (mode === "ERASE") {
+                // Erase cuts circles out with the background baseline color
+                ctx.beginPath();
+                ctx.arc(targetX, targetY, parseInt(sizeSlider.value) * 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#030307';
+                ctx.shadowBlur = 0;
+                ctx.fill();
+                
+                // Keep trail references snapped to prevent giant gap lines crossing screen on next draw
+                lastX = null;
+                lastY = null;
+            } 
+            else {
+                // Paused / Resting state
+                lastX = null;
+                lastY = null;
+            }
+        }
+
+        // --- MEDIAPIPE CORE LIFECYCLE EVENT HANDLERS ---
+        function onResults(results) {
+            // Synchronize dimensions of internal diagnostic overlay tracker
+            if(overlayCanvas.width !== video.videoWidth) {
+                overlayCanvas.width = video.videoWidth;
+                overlayCanvas.height = video.videoHeight;
+            }
+
+            oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const primaryHand = results.multiHandLandmarks[0];
+                
+                // Draw skeleton landmarks inside our mini preview tracking window
+                drawConnectors(oCtx, primaryHand, HAND_CONNECTIONS, {color: '#00f0ff', lineWidth: 2});
+                drawLandmarks(oCtx, primaryHand, {color: '#ff0055', lineWidth: 1, radius: 3});
+
+                // Calculate current configuration gesture shape
+                const gestureMode = analyzeGesture(primaryHand);
+                
+                // Stream coordinate calculation into artwork engine
+                processDrawing(primaryHand, gestureMode);
+            } else {
+                // If no hands present on screen, enter standby loop state
+                hudState.innerText = "AWAITING_HAND";
+                hudState.className = "hud-status state-pause";
+                lastX = null;
+                lastY = null;
+            }
+        }
+
+        // Initializing Hands Framework Parameters
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
+        });
+
+        hands.onResults(onResults);
+
+        // Hardware Camera Initialization
+        const camera = new Camera(video, {
+            onFrame: async () => {
+                await hands.send({image: video});
+            },
+            width: 640,
+            height: 480
+        });
+        
+        camera.start().then(() => {
+            hudState.innerText = "SYSTEM_READY";
+        });
+    </script>
+</body>
+</html>
